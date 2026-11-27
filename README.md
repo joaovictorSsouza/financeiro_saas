@@ -1,5 +1,7 @@
 # financeiro_saas — API de controle financeiro pessoal
 
+[![CI](https://github.com/joaovictorSsouza/financeiro_saas/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/joaovictorSsouza/financeiro_saas/actions/workflows/ci.yml)
+
 API em Django + Django REST Framework de um app de finanças pessoais. O frontend é um PWA separado (outro repositório). Cada usuário vê **somente os próprios dados**, e o cadastro é **apenas por convite**.
 
 - **Stack:** Python 3.12, Django 5.2 LTS, DRF, JWT (simplejwt), PostgreSQL 17, uv, pytest, ruff.
@@ -160,6 +162,7 @@ Veja o [`.env.example`](.env.example), que documenta todas. As principais:
 | `DJANGO_SESSION_COOKIE_SECURE` / `DJANGO_CSRF_COOKIE_SECURE` | não | `True` / `True` | Cookies só via HTTPS (`False` só localmente) |
 | `DJANGO_SECURE_HSTS_SECONDS` | não | `2592000` (30 dias) | HSTS |
 | `DJANGO_LOG_LEVEL` | não | `INFO` | Nível de log (JSON no stdout em prod) |
+| `GIT_SHA` | não (automático) | hash do commit | Exposto no `/api/health/` como `versao`. O Easypanel passa como build arg; não defina à mão |
 
 ### `DATABASE_URL` do Supabase
 
@@ -195,8 +198,8 @@ A imagem é construída a partir do `Dockerfile` (multi-stage, roda com usuário
 3. **Build:** *Build* → **Dockerfile**, com caminho `Dockerfile`.
 4. **Variáveis:** em *Environment*, cole as variáveis (veja o checklist abaixo).
 5. **Domínio:** em *Domains*, adicione `api.seudominio.com.br` com HTTPS ligado, apontando para a **porta 8000** do container.
-6. **Deploy:** clique em *Deploy* e acompanhe os logs. Você deve ver `Aplicando migrations...` e depois o gunicorn em `Listening at: http://0.0.0.0:8000`.
-7. **Teste:** abra `https://api.seudominio.com.br/api/health/`. A resposta esperada é `{"status": "ok", "banco": "ok"}`.
+6. **Primeiro deploy:** clique em *Deploy* e acompanhe os logs (os seguintes saem do CI; veja [Deploy contínuo](#deploy-contínuo)). Você deve ver `Aplicando migrations...` e depois o gunicorn em `Listening at: http://0.0.0.0:8000`.
+7. **Teste:** abra `https://api.seudominio.com.br/api/health/`. A resposta esperada é `{"status": "ok", "banco": "ok", "versao": "<sha do commit>"}`.
 8. **Superusuário:** no *Console* do serviço, rode `python manage.py createsuperuser`.
 9. **Primeiro convite:** no mesmo console, rode `python manage.py criar_convite --email voce@exemplo.com`.
 10. **Categorias padrão** para usuários criados fora do registro (ex.: o superusuário): `python manage.py criar_categorias_padrao voce@exemplo.com`.
@@ -218,6 +221,21 @@ O restante tem padrão seguro em `config/settings/prod.py`.
 
 O Swagger em produção (`/api/docs/`) exige login: entre primeiro em `/admin/` e depois abra `/api/docs/`.
 
+### Deploy contínuo
+
+O deploy em produção é automático e **só acontece pela main com o CI verde**:
+
+```
+PR → CI (lint, test, docker) → merge na main → CI de novo na main → job deploy
+   → webhook do Easypanel → build do Dockerfile → espera o /api/health/ responder com o SHA novo
+```
+
+- O job `deploy` fica no mesmo workflow (`.github/workflows/ci.yml`), com `needs: [lint, test, docker]` e `if` restrito a `push` na `main`. Em PR e em outras branches ele não roda.
+- Usa o environment `production` e `concurrency: deploy-production` (um deploy por vez; um push novo espera o atual terminar, sem cancelar).
+- Chama o *Deployment Trigger* do Easypanel (segredo `EASYPANEL_DEPLOY_WEBHOOK`) com `curl --fail`, timeout e retry. A URL nunca é impressa.
+- **Verificação:** o Easypanel passa `GIT_SHA` como build arg nos builds por Dockerfile; o `Dockerfile` grava esse valor em `ENV GIT_SHA`, e o `/api/health/` o devolve em `versao`. O job consulta `HEALTHCHECK_URL` (variável do repositório) a cada 15 s por até 10 minutos e só passa quando `status` é `ok` e `versao` é o SHA do commit que disparou o deploy. Se nesse meio tempo a main andou e já está no ar um commit mais novo que contém este, o job também passa.
+- O **Auto Deploy do Easypanel fica desligado**: quem dispara o deploy é o CI. Deploy manual pelo painel continua possível em emergência, mas o caminho normal é o merge na main.
+
 ---
 
 ## Testes e qualidade
@@ -228,7 +246,7 @@ make lint      # ruff check + ruff format --check
 uv run pytest --cov   # com cobertura
 ```
 
-O CI (GitHub Actions) roda em todo push e PR: ruff, pytest contra Postgres 17, checagem de migrations pendentes e o build da imagem Docker.
+O CI (GitHub Actions) roda em todo push e PR: ruff, pytest contra Postgres 17, checagem de migrations pendentes e o build da imagem Docker. Em push na `main`, com tudo verde, roda também o deploy (veja [Deploy contínuo](#deploy-contínuo)).
 
 ---
 
