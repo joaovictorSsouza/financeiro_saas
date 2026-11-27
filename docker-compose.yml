@@ -18,5 +18,25 @@ services:
       timeout: 5s
       retries: 10
 
+  # Opcional: roda a imagem de PRODUÇÃO localmente (gunicorn + settings prod).
+  # Suba com: make up-api  (ou docker compose --profile api up --build)
+  # Obs.: cookies "secure" exigem HTTPS, então o login do /admin/ não funciona via
+  # http://localhost neste modo; a API com JWT funciona normalmente.
+  api:
+    profiles: ["api"]
+    build: .
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      DATABASE_URL: postgres://${POSTGRES_USER:-financeiro}:${POSTGRES_PASSWORD:-financeiro}@postgres:5432/${POSTGRES_DB:-financeiro}
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
+      DJANGO_SECURE_SSL_REDIRECT: "False"
+      GUNICORN_WORKERS: "2"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres_data:

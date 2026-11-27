@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 MANAGE := uv run python manage.py
 
-.PHONY: help setup up down run test lint format migrate makemigrations superuser convite shell
+.PHONY: help setup up up-api down run test lint format migrate makemigrations superuser convite shell
 
 help: ## Lista os comandos disponíveis
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -17,8 +17,11 @@ setup: ## Instala dependências, cria .env, sobe o Postgres, migra e cria a tabe
 up: ## Sobe o Postgres local
 	docker compose up -d --wait postgres
 
+up-api: ## Sobe Postgres + a API com a imagem de produção (Docker) em http://localhost:8000
+	docker compose --profile api up -d --build --wait
+
 down: ## Para os containers
-	docker compose down
+	docker compose --profile api down
 
 run: ## Roda a API em modo desenvolvimento (http://localhost:8000)
 	$(MANAGE) runserver 0.0.0.0:8000
