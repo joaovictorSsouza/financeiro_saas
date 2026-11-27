@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Mesma versão maior do Supabase (POSTGRES_VERSION no docker-compose).
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: financeiro
+          POSTGRES_USER: financeiro
+          POSTGRES_PASSWORD: financeiro
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U financeiro"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DJANGO_SECRET_KEY: ci-somente-para-testes
+      DATABASE_URL: postgres://financeiro:financeiro@localhost:5432/financeiro
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Verifica migrations pendentes
+        run: uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test
+      - run: uv run pytest --cov --cov-report=term-missing
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build da imagem de produção
+        run: docker build -t financeiro-api:ci .
