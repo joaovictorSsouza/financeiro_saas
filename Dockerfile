@@ -44,6 +44,12 @@ RUN DJANGO_SECRET_KEY=collectstatic-build-only \
     && chmod +x docker/entrypoint.sh \
     && chown -R app:app /app/staticfiles
 
+# Commit da imagem, exposto no /api/health/ ("versao"). O Easypanel passa GIT_SHA como
+# build arg nos deploys a partir do repositório. Declarado só aqui, no fim, para não
+# invalidar o cache das camadas anteriores.
+ARG GIT_SHA=""
+ENV GIT_SHA=${GIT_SHA}
+
 USER app
 
 EXPOSE 8000

@@ -4,9 +4,11 @@ on:
   push:
   pull_request:
 
+# Em PRs e branches, um push novo cancela o CI anterior. Na main não, para não
+# interromper um deploy no meio (o job de deploy tem a própria fila, abaixo).
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -58,4 +60,76 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build da imagem de produção
-        run: docker build -t financeiro-api:ci .
+        run: docker build --build-arg GIT_SHA=${{ github.sha }} -t financeiro-api:ci .
+
+  # CD: só depois de lint, testes e build verdes, e só em push na main.
+  deploy:
+    needs: [lint, test, docker]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.HEALTHCHECK_URL }}
+    # Um deploy por vez. Um push novo espera o atual terminar (não cancela).
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    timeout-minutes: 15
+    steps:
+      - name: Dispara o deploy no Easypanel
+        env:
+          WEBHOOK: ${{ secrets.EASYPANEL_DEPLOY_WEBHOOK }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "::error::Segredo EASYPANEL_DEPLOY_WEBHOOK não configurado."
+            exit 1
+          fi
+          # --silent sem --show-error: nenhuma mensagem do curl (que poderia citar o host).
+          status=0
+          curl --fail --silent --output /dev/null \
+            --request POST \
+            --connect-timeout 10 --max-time 30 \
+            --retry 3 --retry-delay 5 --retry-all-errors \
+            "$WEBHOOK" || status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "::error::Falha ao chamar o webhook do Easypanel (curl saiu com $status)."
+            exit 1
+          fi
+          echo "Deploy disparado para ${GITHUB_SHA}."
+
+      - name: Espera a versão nova responder no health
+        env:
+          HEALTHCHECK_URL: ${{ vars.HEALTHCHECK_URL }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$HEALTHCHECK_URL" ]; then
+            echo "::error::Variável HEALTHCHECK_URL não configurada."
+            exit 1
+          fi
+          limite=$(( $(date +%s) + 600 ))   # 10 minutos
+          while [ "$(date +%s)" -lt "$limite" ]; do
+            corpo=$(curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_URL" || true)
+            versao=$(printf '%s' "$corpo" | jq -r '.versao // empty' 2>/dev/null || true)
+            status=$(printf '%s' "$corpo" | jq -r '.status // empty' 2>/dev/null || true)
+
+            if [ "$status" = "ok" ] && [ "$versao" = "$GITHUB_SHA" ]; then
+              echo "Versão ${GITHUB_SHA} no ar e saudável."
+              exit 0
+            fi
+
+            # Se a main andou e o Easypanel já subiu um commit mais novo que contém este,
+            # o deploy deste commit está coberto.
+            if [ "$status" = "ok" ] && [ -n "$versao" ]; then
+              relacao=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${GITHUB_SHA}...${versao}" \
+                --jq .status 2>/dev/null || true)
+              if [ "$relacao" = "ahead" ]; then
+                echo "No ar: ${versao}, mais novo e contém ${GITHUB_SHA}. OK."
+                exit 0
+              fi
+            fi
+
+            echo "Aguardando... status=${status:-sem resposta} versao=${versao:-?}"
+            sleep 15
+          done
+          echo "::error::A versão ${GITHUB_SHA} não apareceu no health em 10 minutos."
+          exit 1
