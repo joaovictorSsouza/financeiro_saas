@@ -8,8 +8,9 @@ Partes de uma divisão não mexem no saldo: a original já contou.
 from django.db import transaction
 from django.db.models import F
 
-from apps.financas.models import ContaFinanceira, Transacao
+from apps.financas.models import ContaFinanceira, Ocorrencia, Transacao
 
+from .casamento import casar_perto_de
 from .regras import aplicar_regras
 
 
@@ -35,7 +36,20 @@ def criar_transacao(usuario, **dados) -> Transacao:
         aplicar_regras(t, salvar=False)
     t.save()
     _ajustar_saldo(t.conta_id, _efeito(t))
+    _casar(t)
     return t
+
+
+def _casar(t: Transacao) -> None:
+    if t.transacao_pai_id is None:
+        casar_perto_de(t.usuario_id, t.data)
+
+
+def _liberar_ocorrencia(t: Transacao) -> None:
+    """Se a transação quitava uma ocorrência, ela volta a prevista."""
+    Ocorrencia.objects.filter(transacao=t).update(
+        status=Ocorrencia.Status.PREVISTA, transacao=None, paga_em=None
+    )
 
 
 @transaction.atomic
@@ -43,6 +57,7 @@ def atualizar_transacao(t: Transacao, **dados) -> Transacao:
     """Mudar a categoria pela edição marca a categoria como manual."""
     conta_anterior, efeito_anterior = t.conta_id, _efeito(t)
     categoria_anterior = t.categoria_id
+    tipo_e_ignorada_anteriores = (t.tipo, t.ignorada)
     for campo, valor in dados.items():
         setattr(t, campo, valor)
     if "categoria" in dados and t.categoria_id != categoria_anterior:
@@ -50,10 +65,14 @@ def atualizar_transacao(t: Transacao, **dados) -> Transacao:
     t.save()
     _ajustar_saldo(conta_anterior, -efeito_anterior)
     _ajustar_saldo(t.conta_id, _efeito(t))
+    if (t.tipo, t.ignorada) != tipo_e_ignorada_anteriores:
+        _liberar_ocorrencia(t)
+    _casar(t)
     return t
 
 
 @transaction.atomic
 def excluir_transacao(t: Transacao) -> None:
     _ajustar_saldo(t.conta_id, -_efeito(t))
+    _liberar_ocorrencia(t)
     t.delete()

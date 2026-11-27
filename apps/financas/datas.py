@@ -36,3 +36,8 @@ def parse_mes(valor: str) -> datetime.date:
     if not casamento:
         raise ValueError("Use o formato AAAA-MM.")
     return datetime.date(int(casamento[1]), int(casamento[2]), 1)
+
+
+def ultimos_meses(ate: datetime.date, quantidade: int) -> list[datetime.date]:
+    """Os `quantidade` meses terminando em `ate`, do mais antigo ao mais recente."""
+    return [somar_meses(primeiro_dia(ate), -i) for i in range(quantidade - 1, -1, -1)]
