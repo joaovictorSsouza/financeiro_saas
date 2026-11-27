@@ -19,6 +19,10 @@ DEBUG = env.bool("DJANGO_DEBUG", default=False)
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
 CSRF_TRUSTED_ORIGINS = env.list("DJANGO_CSRF_TRUSTED_ORIGINS", default=[])
 
+# Commit em execução, exposto no /api/health/ (campo "versao"). Em produção o Easypanel
+# passa GIT_SHA como build arg e o Dockerfile o grava na imagem. Vazio fora do Docker.
+VERSAO = env("GIT_SHA", default="")
+
 DJANGO_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",

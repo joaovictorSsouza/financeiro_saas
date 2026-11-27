@@ -10,7 +10,14 @@ URL = "/api/health/"
 def test_health_ok(client):
     resposta = client.get(URL)
     assert resposta.status_code == 200
-    assert resposta.json() == {"status": "ok", "banco": "ok"}
+    assert resposta.json() == {"status": "ok", "banco": "ok", "versao": ""}
+
+
+@pytest.mark.django_db
+def test_health_expoe_versao(client, settings):
+    settings.VERSAO = "abc123"
+    resposta = client.get(URL)
+    assert resposta.json()["versao"] == "abc123"
 
 
 @pytest.mark.django_db
