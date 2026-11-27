@@ -30,6 +30,7 @@ DJANGO_APPS = [
 THIRD_PARTY_APPS: list[str] = []
 LOCAL_APPS = [
     "apps.core",
+    "apps.accounts",
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
@@ -78,6 +79,8 @@ DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = env.bool(
 )
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+AUTH_USER_MODEL = "accounts.Usuario"
 
 # --- Cache ----------------------------------------------------------------------
 # DatabaseCache: compartilhado entre todos os workers do gunicorn (usado pelo
