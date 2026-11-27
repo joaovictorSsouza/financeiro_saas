@@ -99,10 +99,13 @@ class ContaFinanceira(ModeloBase):
     instituicao = models.CharField("instituição", max_length=80, blank=True)
     saldo_centavos = models.BigIntegerField("saldo (centavos)", default=0)
     limite_centavos = models.BigIntegerField("limite (centavos)", null=True, blank=True)
-    # Integração Pluggy (fase 2, app `bancos`). Os ids da Pluggy são UUIDs; a conexão
-    # (item) fica como UUID solto até existir o model de conexão.
-    conexao_pluggy_id = models.UUIDField("conexão Pluggy (item)", null=True, blank=True)
-    pluggy_account_id = models.UUIDField("conta Pluggy", null=True, blank=True)
+    # Integração Pluggy (fase 2, app `bancos`). Texto porque o formato dos ids é de
+    # terceiros; "" = sem Pluggy. A conexão (item) fica como texto solto até existir o
+    # model de conexão.
+    conexao_pluggy_id = models.CharField(
+        "conexão Pluggy (item)", max_length=64, blank=True, default=""
+    )
+    pluggy_account_id = models.CharField("conta Pluggy", max_length=64, blank=True, default="")
     ativa = models.BooleanField("ativa", default=True)
 
     class Meta(ModeloBase.Meta):
@@ -112,7 +115,7 @@ class ContaFinanceira(ModeloBase):
         constraints = [
             models.UniqueConstraint(
                 fields=["pluggy_account_id"],
-                condition=models.Q(pluggy_account_id__isnull=False),
+                condition=~models.Q(pluggy_account_id=""),
                 name="conta_pluggy_account_id_unico",
             ),
         ]
@@ -123,7 +126,7 @@ class ContaFinanceira(ModeloBase):
 
     @property
     def manual(self) -> bool:
-        return self.pluggy_account_id is None
+        return not self.pluggy_account_id
 
 
 class Transacao(ModeloBase):
@@ -170,7 +173,9 @@ class Transacao(ModeloBase):
         "categoria definida manualmente", default=False
     )
     origem = models.CharField("origem", max_length=10, choices=Origem.choices, default="manual")
-    pluggy_transaction_id = models.UUIDField("transação Pluggy", null=True, blank=True)
+    pluggy_transaction_id = models.CharField(
+        "transação Pluggy", max_length=64, blank=True, default=""
+    )
     parcela_atual = models.PositiveSmallIntegerField("parcela atual", null=True, blank=True)
     total_parcelas = models.PositiveSmallIntegerField("total de parcelas", null=True, blank=True)
     ignorada = models.BooleanField(
@@ -206,7 +211,7 @@ class Transacao(ModeloBase):
             ),
             models.UniqueConstraint(
                 fields=["pluggy_transaction_id"],
-                condition=models.Q(pluggy_transaction_id__isnull=False),
+                condition=~models.Q(pluggy_transaction_id=""),
                 name="transacao_pluggy_transaction_id_unico",
             ),
         ]

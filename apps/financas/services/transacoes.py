@@ -16,7 +16,7 @@ from .regras import aplicar_regras
 
 def _ajustar_saldo(conta_id, delta: int) -> None:
     if delta:
-        ContaFinanceira.objects.filter(pk=conta_id, pluggy_account_id__isnull=True).update(
+        ContaFinanceira.objects.filter(pk=conta_id, pluggy_account_id="").update(
             saldo_centavos=F("saldo_centavos") + delta
         )
 

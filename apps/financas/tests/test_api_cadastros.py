@@ -1,5 +1,3 @@
-import uuid
-
 import pytest
 
 from apps.financas.models import Categoria, ContaFinanceira, RegraCategoria
@@ -116,7 +114,7 @@ def test_crud_de_conta(cliente_autenticado, usuario):
     assert resposta.status_code == 201, resposta.json()
     corpo = resposta.json()
     assert corpo["manual"] is True
-    assert corpo["pluggy_account_id"] is None
+    assert corpo["pluggy_account_id"] == ""
     url = f"{CONTAS}{corpo['id']}/"
     assert cliente_autenticado.patch(url, {"ativa": False}).json()["ativa"] is False
     assert cliente_autenticado.get(CONTAS, {"ativa": "true"}).json()["count"] == 0
@@ -125,13 +123,13 @@ def test_crud_de_conta(cliente_autenticado, usuario):
 
 def test_campos_da_pluggy_sao_somente_leitura(cliente_autenticado):
     resposta = cliente_autenticado.post(
-        CONTAS, {"nome": "X", "tipo": "corrente", "pluggy_account_id": str(uuid.uuid4())}
+        CONTAS, {"nome": "X", "tipo": "corrente", "pluggy_account_id": "injetado"}
     )
-    assert ContaFinanceira.objects.get(pk=resposta.json()["id"]).pluggy_account_id is None
+    assert ContaFinanceira.objects.get(pk=resposta.json()["id"]).pluggy_account_id == ""
 
 
 def test_saldo_de_conta_conectada_nao_e_editavel(cliente_autenticado, usuario):
-    conta = ContaFinanceiraFactory(usuario=usuario, pluggy_account_id=uuid.uuid4())
+    conta = ContaFinanceiraFactory(usuario=usuario, pluggy_account_id="conta-pluggy-1")
     resposta = cliente_autenticado.patch(f"{CONTAS}{conta.pk}/", {"saldo_centavos": 1})
     assert resposta.status_code == 400
 

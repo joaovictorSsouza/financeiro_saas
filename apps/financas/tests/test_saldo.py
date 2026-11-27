@@ -1,5 +1,4 @@
 import datetime
-import uuid
 
 import pytest
 
@@ -55,7 +54,7 @@ def test_ignorada_tambem_mexe_no_saldo(usuario):
 
 def test_conta_pluggy_nao_e_alterada(usuario):
     conta = ContaFinanceiraFactory(
-        usuario=usuario, saldo_centavos=500, pluggy_account_id=uuid.uuid4()
+        usuario=usuario, saldo_centavos=500, pluggy_account_id="conta-pluggy-1"
     )
     nova(usuario, conta)
     assert saldo(conta) == 500

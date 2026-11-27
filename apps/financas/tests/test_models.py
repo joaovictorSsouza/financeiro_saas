@@ -1,5 +1,3 @@
-import uuid
-
 import pytest
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
@@ -66,8 +64,8 @@ def test_raiz_da_categoria(usuario):
 
 def test_pluggy_account_id_unico_quando_preenchido(usuario):
     ContaFinanceiraFactory(usuario=usuario)
-    ContaFinanceiraFactory(usuario=usuario)  # dois nulos convivem
-    pluggy_id = uuid.uuid4()
+    ContaFinanceiraFactory(usuario=usuario)  # duas vazias ("" = sem Pluggy) convivem
+    pluggy_id = "8f2b1c3e-conta"
     ContaFinanceiraFactory(usuario=usuario, pluggy_account_id=pluggy_id)
     with pytest.raises(IntegrityError):
         ContaFinanceiraFactory(usuario=usuario, pluggy_account_id=pluggy_id)
@@ -75,7 +73,16 @@ def test_pluggy_account_id_unico_quando_preenchido(usuario):
 
 def test_conta_manual(usuario):
     assert ContaFinanceiraFactory(usuario=usuario).manual
-    assert not ContaFinanceira(pluggy_account_id=uuid.uuid4()).manual
+    assert ContaFinanceira().manual
+    assert not ContaFinanceira(pluggy_account_id="abc").manual
+
+
+def test_pluggy_transaction_id_unico_quando_preenchido(usuario):
+    TransacaoFactory(usuario=usuario)
+    TransacaoFactory(usuario=usuario)
+    TransacaoFactory(usuario=usuario, pluggy_transaction_id="tx-1")
+    with pytest.raises(IntegrityError):
+        TransacaoFactory(usuario=usuario, pluggy_transaction_id="tx-1")
 
 
 def test_apagar_usuario_apaga_todos_os_dados_financeiros(usuario):
