@@ -1,0 +1,59 @@
+"""Criação, edição e exclusão de transações mantendo o saldo das contas manuais.
+
+O saldo de uma conta manual acompanha as transações (inclusive as ignoradas, porque uma
+transferência move dinheiro de verdade). Contas da Pluggy recebem o saldo do banco.
+Partes de uma divisão não mexem no saldo: a original já contou.
+"""
+
+from django.db import transaction
+from django.db.models import F
+
+from apps.financas.models import ContaFinanceira, Transacao
+
+from .regras import aplicar_regras
+
+
+def _ajustar_saldo(conta_id, delta: int) -> None:
+    if delta:
+        ContaFinanceira.objects.filter(pk=conta_id, pluggy_account_id__isnull=True).update(
+            saldo_centavos=F("saldo_centavos") + delta
+        )
+
+
+def _efeito(t: Transacao) -> int:
+    return 0 if t.transacao_pai_id else t.efeito_no_saldo
+
+
+@transaction.atomic
+def criar_transacao(usuario, **dados) -> Transacao:
+    """Informar a categoria na criação conta como escolha manual; sem categoria, aplica as
+    regras do usuário."""
+    t = Transacao(usuario=usuario, **dados)
+    if t.categoria_id is not None and "categoria_definida_manualmente" not in dados:
+        t.categoria_definida_manualmente = True
+    if t.categoria_id is None:
+        aplicar_regras(t, salvar=False)
+    t.save()
+    _ajustar_saldo(t.conta_id, _efeito(t))
+    return t
+
+
+@transaction.atomic
+def atualizar_transacao(t: Transacao, **dados) -> Transacao:
+    """Mudar a categoria pela edição marca a categoria como manual."""
+    conta_anterior, efeito_anterior = t.conta_id, _efeito(t)
+    categoria_anterior = t.categoria_id
+    for campo, valor in dados.items():
+        setattr(t, campo, valor)
+    if "categoria" in dados and t.categoria_id != categoria_anterior:
+        t.categoria_definida_manualmente = t.categoria_id is not None
+    t.save()
+    _ajustar_saldo(conta_anterior, -efeito_anterior)
+    _ajustar_saldo(t.conta_id, _efeito(t))
+    return t
+
+
+@transaction.atomic
+def excluir_transacao(t: Transacao) -> None:
+    _ajustar_saldo(t.conta_id, -_efeito(t))
+    t.delete()
