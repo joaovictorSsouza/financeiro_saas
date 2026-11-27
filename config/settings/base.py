@@ -33,6 +33,7 @@ THIRD_PARTY_APPS = [
     "rest_framework_simplejwt.token_blacklist",
     "drf_spectacular",
     "corsheaders",
+    "django_filters",
 ]
 LOCAL_APPS = [
     "apps.core",
@@ -109,6 +110,9 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # Paginação por página (?page=2&page_size=100) e filtros com django-filter.
+    "DEFAULT_PAGINATION_CLASS": "apps.core.paginacao.Paginacao",
+    "DEFAULT_FILTER_BACKENDS": ["django_filters.rest_framework.DjangoFilterBackend"],
     # Throttling por escopo (ScopedRateThrottle) nas views de login e registro.
     # O contador fica no cache "default" (DatabaseCache), compartilhado entre workers.
     "DEFAULT_THROTTLE_RATES": {
