@@ -4,6 +4,7 @@ Toda configuração sensível ou que varia por ambiente vem de variáveis de amb
 (django-environ). Em desenvolvimento, um arquivo `.env` na raiz é lido se existir.
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 import environ
@@ -27,7 +28,10 @@ DJANGO_APPS = [
     "whitenoise.runserver_nostatic",
     "django.contrib.staticfiles",
 ]
-THIRD_PARTY_APPS: list[str] = []
+THIRD_PARTY_APPS = [
+    "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
+]
 LOCAL_APPS = [
     "apps.core",
     "apps.accounts",
@@ -91,6 +95,31 @@ CACHES = {
         "BACKEND": "django.core.cache.backends.db.DatabaseCache",
         "LOCATION": "django_cache",
     }
+}
+
+# --- Django REST Framework -----------------------------------------------------
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
+}
+
+# --- JWT (simplejwt) ------------------------------------------------------------
+# Access curto; refresh com rotação e blacklist (cada refresh só pode ser usado uma vez).
+# Nesta fase o refresh vai no corpo da resposta (melhoria futura: cookie HttpOnly).
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=env.int("JWT_ACCESS_MINUTOS", default=15)),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=env.int("JWT_REFRESH_DIAS", default=7)),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
+    "SIGNING_KEY": env("JWT_SIGNING_KEY", default=SECRET_KEY),
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "user_id",
 }
 
 # --- Senhas ---------------------------------------------------------------------
