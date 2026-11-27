@@ -14,8 +14,10 @@ SECURE_SSL_REDIRECT = env.bool("DJANGO_SECURE_SSL_REDIRECT", default=True)
 # O healthcheck interno chega por HTTP puro; não redirecionar.
 SECURE_REDIRECT_EXEMPT = [r"^api/health/$"]
 
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
+# Padrão True (HTTPS). Só desligue para rodar a imagem de produção localmente via
+# http://localhost (serviço `api` do docker-compose). Nunca desligue no Easypanel.
+SESSION_COOKIE_SECURE = env.bool("DJANGO_SESSION_COOKIE_SECURE", default=True)
+CSRF_COOKIE_SECURE = env.bool("DJANGO_CSRF_COOKIE_SECURE", default=True)
 SESSION_COOKIE_HTTPONLY = True
 
 SECURE_HSTS_SECONDS = env.int("DJANGO_SECURE_HSTS_SECONDS", default=60 * 60 * 24 * 30)

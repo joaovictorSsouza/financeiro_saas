@@ -61,7 +61,7 @@ Endereços úteis em desenvolvimento:
 | `make convite ARGS="..."` | Gera um convite (veja abaixo) |
 | `make shell` | Abre o shell do Django |
 
-No modo `make up-api` a imagem roda com os settings de produção. Como os cookies são `Secure`, o login no `/admin/` não funciona via `http://localhost`; a API com JWT funciona normalmente.
+No modo `make up-api` a imagem roda com os settings de produção, mas o serviço `api` do `docker-compose.yml` define `DJANGO_SECURE_SSL_REDIRECT`, `DJANGO_SESSION_COOKIE_SECURE` e `DJANGO_CSRF_COOKIE_SECURE` como `False`. Assim tudo funciona em `http://localhost:8000`, inclusive o login no `/admin/`. Em produção essas três variáveis **não** devem ser definidas: o padrão é `True`.
 
 ---
 
@@ -120,6 +120,8 @@ Veja o [`.env.example`](.env.example), que documenta todas. As principais:
 | `DRF_NUM_PROXIES` | não | `1` em prod | Proxies na frente (para pegar o IP real) |
 | `GUNICORN_WORKERS` | não | `3` | Número de workers |
 | `RODAR_MIGRATIONS` | não | `true` | `migrate` + `createcachetable` ao subir |
+| `DJANGO_SECURE_SSL_REDIRECT` | não | `True` | Redireciona HTTP → HTTPS (`False` só localmente) |
+| `DJANGO_SESSION_COOKIE_SECURE` / `DJANGO_CSRF_COOKIE_SECURE` | não | `True` / `True` | Cookies só via HTTPS (`False` só localmente) |
 | `DJANGO_SECURE_HSTS_SECONDS` | não | `2592000` (30 dias) | HSTS |
 | `DJANGO_LOG_LEVEL` | não | `INFO` | Nível de log (JSON no stdout em prod) |
 
