@@ -76,3 +76,12 @@ class LogoutSerializer(serializers.Serializer):
         if str(token.get("user_id")) != str(usuario.pk):
             raise serializers.ValidationError("Token inválido ou expirado.")
         return token
+
+
+class MeSerializer(serializers.ModelSerializer):
+    """Dados do próprio usuário. Só `nome` é editável; trocar e-mail exigirá verificação."""
+
+    class Meta:
+        model = Usuario
+        fields = ("id", "email", "nome", "criado_em", "last_login")
+        read_only_fields = ("id", "email", "criado_em", "last_login")

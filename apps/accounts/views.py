@@ -1,4 +1,4 @@
-from rest_framework import status
+from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -7,6 +7,7 @@ from . import services
 from .serializers import (
     LoginSerializer,
     LogoutSerializer,
+    MeSerializer,
     RegistroSerializer,
     UsuarioSerializer,
 )
@@ -53,3 +54,14 @@ class LogoutView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.validated_data["refresh"].blacklist()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class MeView(generics.RetrieveUpdateAPIView):
+    """GET/PATCH dos dados do usuário autenticado. O objeto é sempre `request.user`."""
+
+    serializer_class = MeSerializer
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "patch", "head", "options"]
+
+    def get_object(self):
+        return self.request.user
