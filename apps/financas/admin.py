@@ -1,7 +1,16 @@
 from django.contrib import admin
 
-from .models import Categoria, ContaFinanceira, RegraCategoria, Transacao
+from .models import (
+    Categoria,
+    ContaFinanceira,
+    Ocorrencia,
+    Orcamento,
+    Recorrencia,
+    RegraCategoria,
+    Transacao,
+)
 from .services import transacoes as servico_transacoes
+from .services.ocorrencias import sincronizar_recorrencia
 
 
 class AdminDoUsuario(admin.ModelAdmin):
@@ -63,5 +72,35 @@ class RegraCategoriaAdmin(AdminDoUsuario):
     list_display = ("valor", "operador", "categoria", "prioridade", "usuario")
     list_filter = ("usuario", "operador")
     search_fields = ("valor",)
+    list_select_related = ("usuario", "categoria")
+    raw_id_fields = ("categoria",)
+
+
+@admin.register(Recorrencia)
+class RecorrenciaAdmin(AdminDoUsuario):
+    list_display = ("nome", "tipo", "valor_previsto_centavos", "dia_do_mes", "ativa", "usuario")
+    list_filter = ("usuario", "tipo", "ativa")
+    search_fields = ("nome",)
+    list_select_related = ("usuario", "categoria")
+    raw_id_fields = ("categoria", "conta_padrao")
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        sincronizar_recorrencia(obj)
+
+
+@admin.register(Ocorrencia)
+class OcorrenciaAdmin(AdminDoUsuario):
+    list_display = ("recorrencia", "mes_referencia", "vencimento", "valor_centavos", "status")
+    list_filter = ("usuario", "status", "mes_referencia")
+    search_fields = ("recorrencia__nome",)
+    list_select_related = ("usuario", "recorrencia")
+    raw_id_fields = ("recorrencia", "transacao")
+
+
+@admin.register(Orcamento)
+class OrcamentoAdmin(AdminDoUsuario):
+    list_display = ("categoria", "mes_referencia", "limite_centavos", "usuario")
+    list_filter = ("usuario", "mes_referencia")
     list_select_related = ("usuario", "categoria")
     raw_id_fields = ("categoria",)

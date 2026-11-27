@@ -12,6 +12,8 @@ from django.db import models
 
 from apps.core.models import ModeloBase
 
+from .datas import meses_entre, primeiro_dia, somar_meses, vencimento_no_mes
+
 validar_cor_hex = RegexValidator(r"^#[0-9A-Fa-f]{6}$", "Use uma cor hexadecimal, ex.: #1A2B3C.")
 
 
@@ -259,3 +261,182 @@ class RegraCategoria(ModeloBase):
 
     def __str__(self):
         return f"{self.get_operador_display()} '{self.valor}' → {self.categoria}"
+
+
+class Recorrencia(ModeloBase):
+    """Molde de uma conta fixa ou receita fixa (ou parcelado, com `total_parcelas`)."""
+
+    class Tipo(models.TextChoices):
+        CONTA = "conta", "Conta a pagar"
+        RECEITA = "receita", "Receita"
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="recorrencias"
+    )
+    tipo = models.CharField("tipo", max_length=10, choices=Tipo.choices, default=Tipo.CONTA)
+    nome = models.CharField("nome", max_length=120)
+    valor_previsto_centavos = models.BigIntegerField("valor previsto (centavos)")
+    dia_do_mes = models.PositiveSmallIntegerField(
+        "dia do mês", help_text="1 a 31; em meses mais curtos, vence no último dia."
+    )
+    categoria = models.ForeignKey(
+        Categoria, on_delete=models.PROTECT, related_name="recorrencias", verbose_name="categoria"
+    )
+    conta_padrao = models.ForeignKey(
+        ContaFinanceira,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="recorrencias",
+        verbose_name="conta padrão",
+    )
+    inicio = models.DateField("início")
+    fim = models.DateField("fim", null=True, blank=True)
+    total_parcelas = models.PositiveSmallIntegerField("total de parcelas", null=True, blank=True)
+    ativa = models.BooleanField("ativa", default=True)
+
+    class Meta(ModeloBase.Meta):
+        verbose_name = "recorrência"
+        verbose_name_plural = "recorrências"
+        ordering = ["dia_do_mes", "nome"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(dia_do_mes__gte=1, dia_do_mes__lte=31),
+                name="recorrencia_dia_valido",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(valor_previsto_centavos__gt=0),
+                name="recorrencia_valor_positivo",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(fim__isnull=True) | models.Q(fim__gte=models.F("inicio")),
+                name="recorrencia_fim_depois_do_inicio",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(total_parcelas__isnull=True) | models.Q(total_parcelas__gte=1),
+                name="recorrencia_parcelas_validas",
+            ),
+        ]
+        indexes = [models.Index(fields=["usuario", "ativa"], name="recorrencia_usuario_ativa")]
+
+    def __str__(self):
+        return self.nome
+
+    def primeiro_mes(self):
+        """Mês da primeira ocorrência: o do início, ou o seguinte se o vencimento daquele mês
+        cai antes do início (ex.: início 15/11 com dia 5 → primeira em dezembro)."""
+        mes = primeiro_dia(self.inicio)
+        if vencimento_no_mes(mes, self.dia_do_mes) < self.inicio:
+            mes = somar_meses(mes, 1)
+        return mes
+
+    def vale_para(self, mes) -> bool:
+        """Se existe ocorrência neste mês (ignora `ativa`)."""
+        primeiro = self.primeiro_mes()
+        if mes < primeiro:
+            return False
+        if self.fim and vencimento_no_mes(mes, self.dia_do_mes) > self.fim:
+            return False
+        return not (self.total_parcelas and meses_entre(primeiro, mes) >= self.total_parcelas)
+
+
+class Ocorrencia(ModeloBase):
+    """Uma conta ou receita de um mês, gerada a partir de uma recorrência.
+
+    No banco o status é só `prevista` ou `paga`; "atrasada" é calculado na leitura
+    (prevista com vencimento antes de hoje).
+    """
+
+    class Status(models.TextChoices):
+        PREVISTA = "prevista", "Prevista"
+        PAGA = "paga", "Paga"
+        ATRASADA = "atrasada", "Atrasada"  # nunca gravado, só exibido
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="ocorrencias"
+    )
+    recorrencia = models.ForeignKey(
+        Recorrencia, on_delete=models.CASCADE, related_name="ocorrencias"
+    )
+    mes_referencia = models.DateField("mês de referência")
+    vencimento = models.DateField("vencimento")
+    valor_centavos = models.BigIntegerField("valor (centavos)")
+    status = models.CharField(
+        "status",
+        max_length=10,
+        choices=[(Status.PREVISTA, "Prevista"), (Status.PAGA, "Paga")],
+        default=Status.PREVISTA,
+    )
+    # OneToOne: o banco garante que uma transação quita no máximo uma ocorrência.
+    transacao = models.OneToOneField(
+        Transacao,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ocorrencia",
+        verbose_name="transação que quitou",
+    )
+    paga_em = models.DateField("paga em", null=True, blank=True)
+    casamento_automatico = models.BooleanField(
+        "casamento automático",
+        default=True,
+        help_text="Desligado quando o usuário desmarca, para não vincular de novo sozinho.",
+    )
+
+    class Meta(ModeloBase.Meta):
+        verbose_name = "ocorrência"
+        verbose_name_plural = "ocorrências"
+        ordering = ["vencimento"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["recorrencia", "mes_referencia"], name="ocorrencia_unica_por_mes"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(mes_referencia__day=1), name="ocorrencia_mes_no_dia_1"
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["usuario", "mes_referencia"], name="ocorrencia_usuario_mes"),
+            models.Index(fields=["usuario", "vencimento"], name="ocorrencia_usuario_venc"),
+        ]
+
+    def __str__(self):
+        return f"{self.recorrencia} {self.mes_referencia:%m/%Y}"
+
+    def status_em(self, hoje) -> str:
+        if self.status == self.Status.PREVISTA and self.vencimento < hoje:
+            return self.Status.ATRASADA
+        return self.status
+
+
+class Orcamento(ModeloBase):
+    """Limite de gasto de uma categoria num mês (inclui as subcategorias)."""
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="orcamentos"
+    )
+    categoria = models.ForeignKey(
+        Categoria, on_delete=models.CASCADE, related_name="orcamentos", verbose_name="categoria"
+    )
+    mes_referencia = models.DateField("mês de referência")
+    limite_centavos = models.BigIntegerField("limite (centavos)")
+
+    class Meta(ModeloBase.Meta):
+        verbose_name = "orçamento"
+        verbose_name_plural = "orçamentos"
+        ordering = ["-mes_referencia"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["usuario", "categoria", "mes_referencia"], name="orcamento_unico_por_mes"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(mes_referencia__day=1), name="orcamento_mes_no_dia_1"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(limite_centavos__gt=0), name="orcamento_limite_positivo"
+            ),
+        ]
+        indexes = [models.Index(fields=["usuario", "mes_referencia"], name="orcamento_usuario_mes")]
+
+    def __str__(self):
+        return f"{self.categoria} {self.mes_referencia:%m/%Y}"

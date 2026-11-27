@@ -3,7 +3,16 @@ import datetime
 import factory
 
 from apps.accounts.tests.factories import UsuarioFactory
-from apps.financas.models import Categoria, ContaFinanceira, RegraCategoria, Transacao
+from apps.financas.datas import vencimento_no_mes
+from apps.financas.models import (
+    Categoria,
+    ContaFinanceira,
+    Ocorrencia,
+    Orcamento,
+    Recorrencia,
+    RegraCategoria,
+    Transacao,
+)
 
 
 class CategoriaFactory(factory.django.DjangoModelFactory):
@@ -51,3 +60,39 @@ class RegraCategoriaFactory(factory.django.DjangoModelFactory):
     operador = RegraCategoria.Operador.CONTEM
     categoria = factory.SubFactory(CategoriaFactory, usuario=factory.SelfAttribute("..usuario"))
     prioridade = 0
+
+
+class RecorrenciaFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Recorrencia
+
+    usuario = factory.SubFactory(UsuarioFactory)
+    tipo = Recorrencia.Tipo.CONTA
+    nome = factory.Sequence(lambda n: f"Conta fixa {n}")
+    valor_previsto_centavos = 10_000
+    dia_do_mes = 10
+    categoria = factory.SubFactory(CategoriaFactory, usuario=factory.SelfAttribute("..usuario"))
+    inicio = datetime.date(2026, 1, 1)
+
+
+class OcorrenciaFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Ocorrencia
+
+    recorrencia = factory.SubFactory(RecorrenciaFactory)
+    usuario = factory.SelfAttribute("recorrencia.usuario")
+    mes_referencia = datetime.date(2026, 11, 1)
+    vencimento = factory.LazyAttribute(
+        lambda o: vencimento_no_mes(o.mes_referencia, o.recorrencia.dia_do_mes)
+    )
+    valor_centavos = factory.SelfAttribute("recorrencia.valor_previsto_centavos")
+
+
+class OrcamentoFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Orcamento
+
+    usuario = factory.SubFactory(UsuarioFactory)
+    categoria = factory.SubFactory(CategoriaFactory, usuario=factory.SelfAttribute("..usuario"))
+    mes_referencia = datetime.date(2026, 11, 1)
+    limite_centavos = 50_000
