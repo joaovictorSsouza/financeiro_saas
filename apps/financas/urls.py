@@ -1,0 +1,12 @@
+from rest_framework.routers import SimpleRouter
+
+from . import views
+
+app_name = "financas"
+
+router = SimpleRouter()
+router.register("categorias", views.CategoriaViewSet, basename="categoria")
+router.register("contas", views.ContaFinanceiraViewSet, basename="conta")
+router.register("regras", views.RegraCategoriaViewSet, basename="regra")
+
+urlpatterns = router.urls
