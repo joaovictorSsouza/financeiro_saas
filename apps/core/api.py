@@ -1,7 +1,7 @@
 """Bases para as APIs de domínio: tudo filtrado pelo usuário autenticado."""
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db.models import ProtectedError
+from django.db.models import ProtectedError, RestrictedError
 from rest_framework import serializers, status, viewsets
 from rest_framework.exceptions import APIException
 
@@ -30,7 +30,7 @@ class DoUsuarioMixin:
     def perform_destroy(self, instance):
         try:
             instance.delete()
-        except ProtectedError as erro:
+        except (ProtectedError, RestrictedError) as erro:
             raise Conflito(self.mensagem_protegido) from erro
 
 

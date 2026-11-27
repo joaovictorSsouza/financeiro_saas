@@ -6,7 +6,14 @@ from django.db import IntegrityError
 
 from apps.financas.models import Categoria, ContaFinanceira
 
-from .factories import CategoriaFactory, ContaFinanceiraFactory
+from .factories import (
+    CategoriaFactory,
+    ContaFinanceiraFactory,
+    OcorrenciaFactory,
+    OrcamentoFactory,
+    RegraCategoriaFactory,
+    TransacaoFactory,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -69,3 +76,13 @@ def test_pluggy_account_id_unico_quando_preenchido(usuario):
 def test_conta_manual(usuario):
     assert ContaFinanceiraFactory(usuario=usuario).manual
     assert not ContaFinanceira(pluggy_account_id=uuid.uuid4()).manual
+
+
+def test_apagar_usuario_apaga_todos_os_dados_financeiros(usuario):
+    transacao = TransacaoFactory(usuario=usuario)
+    OcorrenciaFactory(recorrencia__usuario=usuario, transacao=transacao)
+    RegraCategoriaFactory(usuario=usuario)
+    OrcamentoFactory(usuario=usuario)
+    usuario.delete()
+    assert not ContaFinanceira.objects.exists()
+    assert not Categoria.objects.exists()

@@ -146,7 +146,12 @@ class Transacao(ModeloBase):
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="transacoes"
     )
     conta = models.ForeignKey(
-        ContaFinanceira, on_delete=models.PROTECT, related_name="transacoes", verbose_name="conta"
+        # RESTRICT (e não PROTECT): bloqueia apagar a conta sozinha, mas deixa apagar o
+        # usuário inteiro, quando as transações também vão embora em cascata.
+        ContaFinanceira,
+        on_delete=models.RESTRICT,
+        related_name="transacoes",
+        verbose_name="conta",
     )
     data = models.DateField("data")
     descricao = models.CharField("descrição", max_length=255)
@@ -280,7 +285,7 @@ class Recorrencia(ModeloBase):
         "dia do mês", help_text="1 a 31; em meses mais curtos, vence no último dia."
     )
     categoria = models.ForeignKey(
-        Categoria, on_delete=models.PROTECT, related_name="recorrencias", verbose_name="categoria"
+        Categoria, on_delete=models.RESTRICT, related_name="recorrencias", verbose_name="categoria"
     )
     conta_padrao = models.ForeignKey(
         ContaFinanceira,
