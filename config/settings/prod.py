@@ -25,6 +25,12 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
 X_FRAME_OPTIONS = "DENY"
 
+# Um proxy confiável (Traefik do Easypanel) na frente: o IP real é o último do XFF.
+REST_FRAMEWORK = {
+    **REST_FRAMEWORK,  # noqa: F405
+    "NUM_PROXIES": env.int("DRF_NUM_PROXIES", default=1),
+}
+
 # Logging em JSON no stdout.
 LOGGING = {
     "version": 1,

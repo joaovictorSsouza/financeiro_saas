@@ -31,6 +31,8 @@ DJANGO_APPS = [
 THIRD_PARTY_APPS = [
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
+    "drf_spectacular",
+    "corsheaders",
 ]
 LOCAL_APPS = [
     "apps.core",
@@ -41,6 +43,7 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -105,7 +108,40 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # Throttling por escopo (ScopedRateThrottle) nas views de login e registro.
+    # O contador fica no cache "default" (DatabaseCache), compartilhado entre workers.
+    "DEFAULT_THROTTLE_RATES": {
+        "login": env("THROTTLE_LOGIN", default="5/min"),
+        "registro": env("THROTTLE_REGISTRO", default="10/hour"),
+    },
+    # Quantos proxies confiáveis existem na frente (para ler o IP real em X-Forwarded-For).
+    # 0 = usa REMOTE_ADDR. Em produção (Easypanel/Traefik) o padrão é 1.
+    "NUM_PROXIES": env.int("DRF_NUM_PROXIES", default=0),
 }
+
+# --- OpenAPI (drf-spectacular) --------------------------------------------------
+# Swagger UI em /api/docs/: liberado em DEBUG ou para usuário logado (sessão do admin
+# ou Bearer). Sem login, redireciona para /admin/login/.
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Financeiro API",
+    "DESCRIPTION": "API do app de controle financeiro pessoal.",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "SCHEMA_PATH_PREFIX": r"/api/v1",
+    "COMPONENT_SPLIT_REQUEST": True,
+    "SERVE_AUTHENTICATION": [
+        "rest_framework.authentication.SessionAuthentication",
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ],
+    "SERVE_PERMISSIONS": ["apps.core.permissions.AutenticadoOuDebug"],
+}
+
+# --- CORS -----------------------------------------------------------------------
+# Origens do PWA, ex.: https://app.seudominio.com.br (lista separada por vírgulas).
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
+CORS_URLS_REGEX = r"^/api/.*$"
+CORS_ALLOW_CREDENTIALS = False  # JWT vai no header Authorization, não em cookie.
 
 # --- JWT (simplejwt) ------------------------------------------------------------
 # Access curto; refresh com rotação e blacklist (cada refresh só pode ser usado uma vez).
