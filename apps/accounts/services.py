@@ -10,6 +10,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .managers import normalizar_email
 from .models import Convite, Usuario
+from .signals import usuario_registrado
 
 
 class ConviteInvalido(Exception):
@@ -43,4 +44,5 @@ def registrar_com_convite(*, codigo: str, email: str, senha: str, nome: str = ""
 
     usuario = Usuario.objects.create_user(email=email, password=senha, nome=nome)
     convite.marcar_como_usado(usuario)
+    usuario_registrado.send(sender=Usuario, usuario=usuario)
     return usuario

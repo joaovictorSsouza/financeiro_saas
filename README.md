@@ -44,7 +44,7 @@ Endereços úteis em desenvolvimento:
 |---|---|
 | http://localhost:8000/api/health/ | Health check (testa a conexão com o banco) |
 | http://localhost:8000/api/docs/ | Swagger UI (aberto em DEBUG; fora dele exige login) |
-| http://localhost:8000/admin/ | Admin do Django (usuários e convites) |
+| http://localhost:8000/admin/ | Admin do Django (usuários, convites e todos os dados financeiros) |
 
 ### Comandos do Makefile
 
@@ -98,6 +98,42 @@ Todas as rotas de negócio ficam em `/api/v1/`. Para autenticar, envie `Authoriz
 
 O login e o registro têm limite de requisições por IP (padrão: 5/min e 10/hora). Os contadores ficam no cache do banco (`DatabaseCache`), compartilhado entre os workers.
 
+### Domínio financeiro
+
+**Todos os valores são inteiros em centavos** (`valor_centavos`, `saldo_centavos`...). Cada usuário só enxerga e só referencia os próprios dados: recurso de outro usuário dá 404, e uma FK de outro usuário no body dá 400. As listas são paginadas (`?page=`, `?page_size=` até 200) e respondem `{count, next, previous, results}`.
+
+| Rota | Descrição |
+|---|---|
+| `/api/v1/categorias/` | CRUD. Até 2 níveis (pai > subcategoria). Filtros: `tipo`, `ativa`, `categoria_pai`, `raiz` |
+| `/api/v1/contas/` | CRUD de contas (corrente, poupança, cartão, carteira, outro). Filtros: `tipo`, `ativa` |
+| `/api/v1/transacoes/` | CRUD. Filtros: `mes=AAAA-MM`, `conta`, `categoria` (inclui subcategorias), `sem_categoria`, `tipo`, `ignorada`, `busca` (descrição ou valor: `45,90`) |
+| `POST/DELETE /api/v1/transacoes/{id}/dividir/` | Divide em partes `{"itens": [{categoria, valor_centavos, descricao?}]}` (soma = valor) / desfaz |
+| `/api/v1/regras/` | CRUD de regras de categoria (`contem`, `comeca_com`, `igual`; sem acentos e sem caixa) |
+| `POST /api/v1/regras/aplicar/` | Reaplica as regras nas transações sem categoria manual |
+| `/api/v1/recorrencias/` | CRUD de contas e receitas fixas (e parcelados com `total_parcelas`) |
+| `GET /api/v1/ocorrencias/?mes=AAAA-MM` | Contas e receitas do mês (gera as que faltam). Filtros: `status` (`prevista`, `paga`, `atrasada`), `tipo` |
+| `POST /api/v1/ocorrencias/{id}/marcar-paga/` | `{transacao?, paga_em?}` |
+| `POST /api/v1/ocorrencias/{id}/desmarcar/` | Volta para prevista (e não casa mais sozinha) |
+| `/api/v1/orcamentos/` | CRUD de limites por categoria e mês. Filtros: `mes`, `categoria` |
+| `GET /api/v1/dashboard/resumo/?mes=AAAA-MM` | Resumo do mês (saldo, receitas × despesas, contas a pagar, saldo previsto, gastos por categoria, orçamentos, alertas...) |
+| `GET /api/v1/dashboard/evolucao/?meses=6` | Receitas e despesas por mês (`ate=AAAA-MM` opcional) |
+
+Regras que valem para o app inteiro:
+
+- **Saldo:** nas contas manuais (sem Pluggy), criar, editar ou apagar transações ajusta o saldo da conta automaticamente.
+- **Ignorada:** a transação fica fora de receitas e despesas, mas continua mexendo no saldo. Use para transferências entre contas próprias e para o **pagamento da fatura do cartão na conta corrente**: os gastos já contam no cartão, então sem `ignorada` a despesa conta duas vezes. O dashboard devolve um alerta (`alertas`) quando acha uma saída na corrente com "fatura" ou "cartão" na descrição e sem `ignorada`.
+- **Estorno:** uma entrada com categoria de gasto (ex.: compra devolvida) abate o gasto da categoria, os orçamentos e as despesas do mês. Ela não conta como receita.
+- **Ocorrências:** são geradas a partir das recorrências sempre que um mês é consultado, e também ao criar uma recorrência. Elas são casadas sozinhas com transações de valor ±10% e data até 5 dias antes ou depois do vencimento. "Atrasada" é calculado: prevista com vencimento antes de hoje.
+- **Categorias padrão:** são criadas no registro. Para um usuário que já existia, rode `python manage.py criar_categorias_padrao <email>`.
+
+Comandos de gestão:
+
+```bash
+uv run python manage.py criar_categorias_padrao voce@exemplo.com   # idempotente
+uv run python manage.py gerar_ocorrencias --mes 2026-12 [--email voce@exemplo.com]
+uv run python manage.py verificar_rls                              # confere o RLS (abaixo)
+```
+
 ---
 
 ## Variáveis de ambiente
@@ -139,6 +175,15 @@ Se a senha tiver caracteres especiais (`@`, `:`, `/`, `#`...), codifique-os em U
 
 Usamos o Supabase **apenas como Postgres**: nada de Supabase Auth, Storage ou supabase-py.
 
+### Data API do Supabase bloqueada (RLS)
+
+O Supabase publica automaticamente as tabelas do schema `public` numa API REST (PostgREST) acessível com a chave `anon`. Para que ninguém leia nada por ali, **toda tabela do `public` tem Row Level Security ligado e nenhuma policy**. Isso vale para as tabelas do projeto, do Django (auth, admin, sessions, contenttypes, `django_migrations`), do simplejwt (`token_blacklist_*`) e do cache (`django_cache`).
+
+- **Como:** um sinal `post_migrate` (`apps/core/rls.py`) roda a cada `migrate`. Ele garante a tabela de cache e liga o RLS nas tabelas que ainda não têm. Tabelas novas ficam cobertas sozinhas no próximo deploy.
+- **Por que o Django continua funcionando:** ele conecta com o dono das tabelas (o papel `postgres` do Session pooler, o mesmo que rodou o `migrate`), e o RLS **não se aplica ao dono** enquanto não houver `FORCE ROW LEVEL SECURITY`. **Nunca use FORCE.**
+- **Conferir:** `python manage.py verificar_rls` mostra o usuário do banco e, por tabela, o dono e o RLS. O comando falha se alguma tabela estiver sem RLS, com FORCE ou com outro dono. Um teste no CI também falha se alguma tabela ficar sem RLS.
+- **Recomendado:** mantenha a **Data API desligada** no painel do Supabase (*Project Settings → Data API*). O RLS é a segunda camada, caso ela seja ligada por engano.
+
 ---
 
 ## Deploy no Easypanel
@@ -154,6 +199,8 @@ A imagem é construída a partir do `Dockerfile` (multi-stage, roda com usuário
 7. **Teste:** abra `https://api.seudominio.com.br/api/health/`. A resposta esperada é `{"status": "ok", "banco": "ok"}`.
 8. **Superusuário:** no *Console* do serviço, rode `python manage.py createsuperuser`.
 9. **Primeiro convite:** no mesmo console, rode `python manage.py criar_convite --email voce@exemplo.com`.
+10. **Categorias padrão** para usuários criados fora do registro (ex.: o superusuário): `python manage.py criar_categorias_padrao voce@exemplo.com`.
+11. **RLS:** `python manage.py verificar_rls` deve terminar com "Todas as tabelas do public têm RLS.".
 
 Checklist de variáveis para o Easypanel:
 
@@ -189,8 +236,12 @@ O CI (GitHub Actions) roda em todo push e PR: ruff, pytest contra Postgres 17, c
 
 ```
 apps/
-  core/       ModeloBase (UUID + timestamps), health check, permissões
+  core/       ModeloBase (UUID + timestamps), health check, permissões, bases de API, RLS
   accounts/   Usuario (login por e-mail), Convite, registro, JWT, /me
+  financas/   Categorias, contas, transações, regras, recorrências, ocorrências, orçamentos
+    services/   Regras de negócio (transacoes, regras, ocorrencias, casamento, categorias)
+  dashboard/  Leitura agregada (resumo e evolução), sem models
+  (bancos/)   Reservado para a integração Pluggy (fase 2)
 config/
   settings/   base.py, dev.py, prod.py, test.py
   api_v1.py   Rotas /api/v1/
