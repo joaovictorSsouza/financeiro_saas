@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.forms import UserChangeForm, UserCreationForm
 
-from .models import Usuario
+from .models import Convite, Usuario
 
 
 class UsuarioCreationForm(UserCreationForm):
@@ -44,3 +44,25 @@ class UsuarioAdmin(UserAdmin):
             },
         ),
     )
+
+
+@admin.register(Convite)
+class ConviteAdmin(admin.ModelAdmin):
+    list_display = ("codigo", "email", "situacao", "expira_em", "criado_por", "usado_por")
+    list_filter = ("expira_em", "usado_em")
+    search_fields = ("codigo", "email", "usado_por__email")
+    readonly_fields = ("id", "codigo", "criado_por", "usado_por", "usado_em", "criado_em")
+    fields = ("id", "codigo", "email", "expira_em", "criado_por", "usado_por", "usado_em")
+
+    @admin.display(description="situação")
+    def situacao(self, obj: Convite) -> str:
+        if obj.usado:
+            return "usado"
+        if obj.expirado:
+            return "expirado"
+        return "disponível"
+
+    def save_model(self, request, obj, form, change):
+        if not change and obj.criado_por_id is None:
+            obj.criado_por = request.user
+        super().save_model(request, obj, form, change)

@@ -1,6 +1,6 @@
 import factory
 
-from apps.accounts.models import Usuario
+from apps.accounts.models import Convite, Usuario
 
 SENHA_PADRAO = "senha-forte-de-teste-123"
 
@@ -18,3 +18,10 @@ class UsuarioFactory(factory.django.DjangoModelFactory):
     def _salvar(obj, create, extracted, **kwargs):
         if create:
             obj.save()
+
+
+class ConviteFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Convite
+
+    criado_por = factory.SubFactory(UsuarioFactory)
