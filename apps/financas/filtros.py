@@ -5,7 +5,15 @@ from django.db.models import Q
 from rest_framework.exceptions import ValidationError
 
 from .datas import parse_mes, ultimo_dia
-from .models import Categoria, ContaFinanceira, RegraCategoria, Transacao
+from .models import (
+    Categoria,
+    ContaFinanceira,
+    Ocorrencia,
+    Orcamento,
+    Recorrencia,
+    RegraCategoria,
+    Transacao,
+)
 
 
 class CategoriaFiltro(django_filters.FilterSet):
@@ -77,3 +85,43 @@ class TransacaoFiltro(django_filters.FilterSet):
         if centavos is not None:
             condicao |= Q(valor_centavos=centavos)
         return queryset.filter(condicao)
+
+
+def _filtrar_mes_referencia(queryset, nome, valor):
+    try:
+        return queryset.filter(mes_referencia=parse_mes(valor))
+    except ValueError as erro:
+        raise ValidationError({"mes": str(erro)}) from erro
+
+
+class RecorrenciaFiltro(django_filters.FilterSet):
+    class Meta:
+        model = Recorrencia
+        fields = ("tipo", "ativa", "categoria")
+
+
+class OcorrenciaFiltro(django_filters.FilterSet):
+    """O mês (`?mes=AAAA-MM`, padrão: o atual) é aplicado pela view."""
+
+    mes = django_filters.CharFilter(method="ignorar", label="Mês (AAAA-MM); padrão: atual")
+    status = django_filters.ChoiceFilter(
+        field_name="status_atual", choices=Ocorrencia.Status.choices
+    )
+    tipo = django_filters.ChoiceFilter(
+        field_name="recorrencia__tipo", choices=Recorrencia.Tipo.choices
+    )
+
+    class Meta:
+        model = Ocorrencia
+        fields = ("recorrencia",)
+
+    def ignorar(self, queryset, nome, valor):
+        return queryset
+
+
+class OrcamentoFiltro(django_filters.FilterSet):
+    mes = django_filters.CharFilter(method=_filtrar_mes_referencia, label="Mês (AAAA-MM)")
+
+    class Meta:
+        model = Orcamento
+        fields = ("categoria",)

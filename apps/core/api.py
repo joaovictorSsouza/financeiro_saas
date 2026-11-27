@@ -12,9 +12,9 @@ class Conflito(APIException):
     default_code = "conflito"
 
 
-class DoUsuarioViewSet(viewsets.ModelViewSet):
-    """ModelViewSet cujo queryset é sempre do `request.user` e que grava `usuario` no
-    servidor. Recurso de outro usuário → 404. Defina `model` e `serializer_class`."""
+class DoUsuarioMixin:
+    """Queryset sempre do `request.user` e `usuario` gravado no servidor.
+    Recurso de outro usuário → 404. Defina `model` e `serializer_class`."""
 
     model = None
     mensagem_protegido = "Este registro está em uso e não pode ser apagado."
@@ -32,6 +32,14 @@ class DoUsuarioViewSet(viewsets.ModelViewSet):
             instance.delete()
         except ProtectedError as erro:
             raise Conflito(self.mensagem_protegido) from erro
+
+
+class DoUsuarioViewSet(DoUsuarioMixin, viewsets.ModelViewSet):
+    pass
+
+
+class DoUsuarioSomenteLeituraViewSet(DoUsuarioMixin, viewsets.ReadOnlyModelViewSet):
+    pass
 
 
 class CampoDoUsuario(serializers.PrimaryKeyRelatedField):

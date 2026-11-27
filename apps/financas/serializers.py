@@ -3,7 +3,15 @@ from rest_framework import serializers
 
 from apps.core.api import CampoDoUsuario, validar_com_clean
 
-from .models import Categoria, ContaFinanceira, RegraCategoria, Transacao
+from .models import (
+    Categoria,
+    ContaFinanceira,
+    Ocorrencia,
+    Orcamento,
+    Recorrencia,
+    RegraCategoria,
+    Transacao,
+)
 from .services import transacoes as servico
 from .services.regras import sugerir_regra
 
@@ -212,4 +220,131 @@ class DividirSerializer(serializers.Serializer):
         transacao = self.context["transacao"]
         for item in attrs["itens"]:
             validar_categoria_para_tipo(item["categoria"], transacao.tipo)
+        return attrs
+
+
+class RecorrenciaSerializer(serializers.ModelSerializer):
+    categoria = CampoDoUsuario(Categoria)
+    conta_padrao = CampoDoUsuario(ContaFinanceira, allow_null=True, required=False)
+
+    class Meta:
+        model = Recorrencia
+        fields = (
+            *CAMPOS_BASE,
+            "tipo",
+            "nome",
+            "valor_previsto_centavos",
+            "dia_do_mes",
+            "categoria",
+            "conta_padrao",
+            "inicio",
+            "fim",
+            "total_parcelas",
+            "ativa",
+        )
+        read_only_fields = CAMPOS_BASE
+        extra_kwargs = {
+            "valor_previsto_centavos": {"min_value": 1},
+            "dia_do_mes": {"min_value": 1, "max_value": 31},
+            "total_parcelas": {"min_value": 1},
+        }
+
+    def validate(self, attrs):
+        def valor(campo):
+            return attrs.get(campo, getattr(self.instance, campo, None))
+
+        inicio, fim = valor("inicio"), valor("fim")
+        if fim and inicio and fim < inicio:
+            raise serializers.ValidationError({"fim": "O fim deve ser depois do início."})
+        conta = valor("tipo") == Recorrencia.Tipo.CONTA
+        esperado = Categoria.Tipo.GASTO if conta else Categoria.Tipo.RECEITA
+        if valor("categoria").tipo != esperado:
+            raise serializers.ValidationError(
+                {"categoria": f"Use uma categoria de {Categoria.Tipo(esperado).label.lower()}."}
+            )
+        return attrs
+
+
+class OcorrenciaSerializer(serializers.ModelSerializer):
+    nome = serializers.CharField(source="recorrencia.nome", read_only=True)
+    tipo = serializers.CharField(source="recorrencia.tipo", read_only=True)
+    categoria = serializers.UUIDField(source="recorrencia.categoria_id", read_only=True)
+    status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Ocorrencia
+        fields = (
+            *CAMPOS_BASE,
+            "recorrencia",
+            "nome",
+            "tipo",
+            "categoria",
+            "mes_referencia",
+            "vencimento",
+            "valor_centavos",
+            "status",
+            "transacao",
+            "paga_em",
+            "casamento_automatico",
+        )
+        read_only_fields = fields
+
+    @extend_schema_field(serializers.ChoiceField(choices=Ocorrencia.Status.choices))
+    def get_status(self, obj) -> str:
+        return getattr(obj, "status_atual", None) or obj.status_em(self.context["hoje"])
+
+
+class MarcarPagaSerializer(serializers.Serializer):
+    transacao = CampoDoUsuario(Transacao, allow_null=True, required=False)
+    paga_em = serializers.DateField(required=False)
+
+    def validate_transacao(self, transacao):
+        if transacao is None:
+            return None
+        ocorrencia = self.context["ocorrencia"]
+        if transacao.transacao_pai_id:
+            raise serializers.ValidationError("Use a transação original, não uma parte.")
+        vinculada = Ocorrencia.objects.filter(transacao=transacao).exclude(pk=ocorrencia.pk)
+        if vinculada.exists():
+            raise serializers.ValidationError("Esta transação já quitou outra ocorrência.")
+        esperado = (
+            Transacao.Tipo.SAIDA
+            if ocorrencia.recorrencia.tipo == Recorrencia.Tipo.CONTA
+            else Transacao.Tipo.ENTRADA
+        )
+        if transacao.tipo != esperado:
+            raise serializers.ValidationError(f"A transação deve ser uma {esperado}.")
+        return transacao
+
+
+class OrcamentoSerializer(serializers.ModelSerializer):
+    categoria = CampoDoUsuario(Categoria)
+    mes_referencia = serializers.DateField(help_text="Qualquer dia do mês; é gravado como o dia 1.")
+
+    class Meta:
+        model = Orcamento
+        fields = (*CAMPOS_BASE, "categoria", "mes_referencia", "limite_centavos")
+        read_only_fields = CAMPOS_BASE
+        extra_kwargs = {"limite_centavos": {"min_value": 1}}
+
+    def validate_mes_referencia(self, valor):
+        return valor.replace(day=1)
+
+    def validate_categoria(self, categoria):
+        if categoria.tipo != Categoria.Tipo.GASTO:
+            raise serializers.ValidationError("Orçamento só para categorias de gasto.")
+        return categoria
+
+    def validate(self, attrs):
+        categoria = attrs.get("categoria", getattr(self.instance, "categoria", None))
+        mes = attrs.get("mes_referencia", getattr(self.instance, "mes_referencia", None))
+        repetido = Orcamento.objects.filter(
+            usuario=self.context["request"].user, categoria=categoria, mes_referencia=mes
+        )
+        if self.instance:
+            repetido = repetido.exclude(pk=self.instance.pk)
+        if repetido.exists():
+            raise serializers.ValidationError(
+                {"categoria": "Já existe orçamento para esta categoria neste mês."}
+            )
         return attrs
